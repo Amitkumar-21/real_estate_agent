@@ -1,0 +1,25 @@
+{
+    "project_name": "White Heights Residency",
+    "developer": "White Heights Developers",
+    "location": "Noida Sector 150",
+    "configurations": [
+        "2 BHK",
+        "3 BHK",
+        "4 BHK"
+    ],
+    "price_range": "₹75 Lakhs - ₹1.35 Crore",
+    "amenities": [
+        "Swimming Pool",
+        "Club House",
+        "Gym",
+        "Kids Play Area",
+        "24x7 Security",
+        "Power Backup"
+    ],
+    "possession": "December 2028",
+    "location_advantages": [
+        "10 minutes from Noida-Greater Noida Expressway",
+        "15 minutes from Metro Station",
+        "Close to Schools and Hospitals"
+    ]
+}
