@@ -126,3 +126,29 @@ Guidelines:
 
 - notes should contain a short summary (2-3 sentences) of the customer's requirements.
 """
+
+
+CALL_SUMMARY_PROMPT = """
+You are an expert CRM assistant.
+
+Analyze the conversation and generate a concise call summary.
+
+Return ONLY valid JSON.
+
+Format:
+
+{
+    "summary":"",
+    "next_action":""
+}
+
+Rules:
+
+- Summary should be 2-4 sentences.
+- Mention customer requirements.
+- Mention budget if available.
+- Mention purpose.
+- Mention timeline if available.
+- next_action should contain one actionable recommendation for the sales team.
+- Do not invent information.
+"""
