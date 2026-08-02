@@ -1,14 +1,14 @@
 from groq import Groq
-
 from app.config import GROQ_API_KEY, MODEL_NAME
 from app.services.prompts import SYSTEM_PROMPT
 from app.services.knowledge import get_project_info
-from app.services.memory import get_history, save_message
+from sqlalchemy.orm import Session
+from app.repositories.conversation_repository import (get_history,save_message)
 
 client = Groq(api_key=GROQ_API_KEY)
 
 
-def generate_response(session_id: str, message: str) -> str:
+def generate_response(db: Session,session_id: str, message: str) -> str:
     project = get_project_info()
 
     system_prompt = f"""
@@ -20,7 +20,7 @@ Project Information:
 """
 
     # Get previous conversation
-    history = get_history(session_id)
+    history = get_history(db,session_id)
 
     # Build messages for the LLM
     messages = [
@@ -31,7 +31,13 @@ Project Information:
     ]
 
     # Add previous conversation
-    messages.extend(history)
+    for msg in history:
+        messages.append(
+            {
+                "role": msg.role,
+                "content": msg.message
+            }
+        )
 
     # Add current user message
     messages.append(
@@ -42,16 +48,11 @@ Project Information:
     )
 
     # Generate AI response
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=messages,
-        temperature=0.7
-    )
-
+    response = client.chat.completions.create(model=MODEL_NAME,messages=messages,temperature=0.7)
     reply = response.choices[0].message.content
 
     # Save conversation AFTER generating response
-    save_message(session_id, "user", message)
-    save_message(session_id, "assistant", reply)
+    save_message(db,session_id, "user", message)
+    save_message(db,session_id, "assistant", reply)
 
     return reply
