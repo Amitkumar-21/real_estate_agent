@@ -7,6 +7,9 @@ from app.repositories.conversation_repository import (get_history,save_message)
 
 client = Groq(api_key=GROQ_API_KEY)
 
+import os
+
+
 
 def generate_response(db: Session,session_id: str, message: str) -> str:
     project = get_project_info()

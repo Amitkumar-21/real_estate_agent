@@ -15,10 +15,15 @@ export default function Home() {
     loading,
     conversationStarted,
     isTextMode,
+    isListening,
+    inputText,
+    setInputText,
     summaryData,
     error,
     isModalOpen,
     handleStartConversation,
+    handleStartListening,
+    handleStopListening,
     toggleTextMode,
     handleSendMessage,
     handleEndConversation,
@@ -26,8 +31,12 @@ export default function Home() {
     dismissError
   } = useChat();
 
-  const handleMicClick = () => {
-    console.log('Microphone action triggered.');
+  const handleToggleListen = () => {
+    if (isListening) {
+      handleStopListening();
+    } else {
+      handleStartListening();
+    }
   };
 
   return (
@@ -47,20 +56,26 @@ export default function Home() {
         /* Active Voice Conversation Screen */
         <main className="flex-1 flex flex-col min-h-0 relative bg-[#F8FAFC] transition-opacity duration-300 animate-in fade-in">
           {/* Active Session Voice Indicator */}
-          <VoiceIndicator isListening={!loading} />
+          <VoiceIndicator
+            isListening={isListening}
+            onToggleListen={handleToggleListen}
+          />
 
           {/* Timeline Stream */}
           <ChatWindow messages={messages} loading={loading} />
 
           {/* Fixed Bottom Control Bar */}
           <div className="bg-[#FFFFFF] border-t border-[#E2E8F0] py-2 px-4 shadow-xs space-y-2">
-            {/* Conditional Text Mode Input */}
+            {/* Conditional Controlled Text Mode Input */}
             {isTextMode && (
               <MessageInput
+                value={inputText}
+                onChange={setInputText}
                 onSendMessage={handleSendMessage}
-                onMicClick={handleMicClick}
+                onMicClick={handleToggleListen}
+                isListening={isListening}
                 disabled={loading}
-                placeholder="Type your message..."
+                placeholder="Speak naturally or edit your recognized message..."
               />
             )}
 

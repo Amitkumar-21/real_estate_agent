@@ -1,19 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { HiPaperAirplane, HiMicrophone } from 'react-icons/hi2';
 
 export default function MessageInput({
+  value = '',
+  onChange,
   onSendMessage,
   onMicClick,
+  isListening = false,
   disabled = false,
-  placeholder = 'Type your message or ask about properties...'
+  placeholder = 'Type your message or speak naturally...'
 }) {
-  const [inputText, setInputText] = useState('');
-
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!inputText.trim() || disabled) return;
-    onSendMessage(inputText);
-    setInputText('');
+    if (!value.trim() || disabled) return;
+    onSendMessage(value);
   };
 
   const handleKeyDown = (e) => {
@@ -36,11 +36,11 @@ export default function MessageInput({
       className="w-full max-w-5xl mx-auto px-4 py-2"
     >
       <div className="relative flex items-center bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl shadow-xs focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-        {/* Text Input */}
+        {/* Controlled Text Input */}
         <textarea
           rows={1}
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
+          value={value}
+          onChange={(e) => onChange && onChange(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
           placeholder={placeholder}
@@ -49,13 +49,17 @@ export default function MessageInput({
 
         {/* Control Buttons Container */}
         <div className="absolute right-3 flex items-center space-x-1.5">
-          {/* Microphone Button Placeholder */}
+          {/* Microphone Button */}
           <button
             type="button"
             onClick={handleMicPress}
             disabled={disabled}
-            title="Voice Integration (Coming Soon)"
-            className="p-2 text-[#64748B] hover:text-[#2563EB] hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+            title={isListening ? 'Stop Listening' : 'Start Voice Recognition'}
+            className={`p-2 rounded-lg transition-all ${
+              isListening
+                ? 'text-red-500 bg-red-50 animate-pulse border border-red-200'
+                : 'text-[#64748B] hover:text-[#2563EB] hover:bg-slate-100'
+            } disabled:opacity-40 disabled:hover:bg-transparent`}
           >
             <HiMicrophone className="w-5 h-5" />
           </button>
@@ -63,7 +67,7 @@ export default function MessageInput({
           {/* Send Button */}
           <button
             type="submit"
-            disabled={disabled || !inputText.trim()}
+            disabled={disabled || !value.trim()}
             title="Send Message"
             className="p-2.5 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs disabled:opacity-40 disabled:hover:bg-[#2563EB] disabled:cursor-not-allowed"
           >
