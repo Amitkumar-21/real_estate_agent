@@ -1,7 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { INITIAL_SUMMARY_STATE } from '../utils/constants';
 import { sendMessageApi, endConversationApi } from '../services/api';
 import { voiceService } from '../services/voice';
+import { speechService } from '../services/speech';
 
 /**
  * Helper to generate session ID using crypto.randomUUID() with fallback.
@@ -15,7 +16,8 @@ const generateUniqueSessionId = () => {
 
 /**
  * Custom hook managing voice-first state, FastAPI backend communication,
- * Web Speech API recognition, hands-free turn loop, session lifecycle, and error handling.
+ * Web Speech API recognition, ElevenLabs Text-to-Speech, hands-free turn loop,
+ * session lifecycle, and error handling.
  */
 export function useChat() {
   const [messages, setMessages] = useState([]);
@@ -24,37 +26,161 @@ export function useChat() {
   const [conversationStarted, setConversationStarted] = useState(false);
   const [isTextMode, setIsTextMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [inputText, setInputText] = useState('');
   const [summaryData, setSummaryData] = useState(null);
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Persistent refs to prevent stale closure bugs & duplicate session generation
+  const sessionIdRef = useRef(null);
+  const conversationStartedRef = useRef(false);
+  const loadingRef = useRef(false);
+  const isModalOpenRef = useRef(false);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
+    conversationStartedRef.current = conversationStarted;
+  }, [conversationStarted]);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  useEffect(() => {
+    isModalOpenRef.current = isModalOpen;
+  }, [isModalOpen]);
 
   const handleStopListening = useCallback(() => {
     voiceService.stop();
     setIsListening(false);
   }, []);
 
+  const handleStopSpeaking = useCallback(() => {
+    speechService.stop();
+    setIsSpeaking(false);
+  }, []);
+
+  /**
+   * Start Voice Listening (Web Speech API)
+   * Populates recognized speech into inputText and automatically dispatches to handleSendMessage.
+   * Restarts automatically after silence timeouts if conversation is active.
+   */
+  const handleStartListening = useCallback(() => {
+    if (!voiceService.isSupported()) {
+      setError('Your browser does not support Speech Recognition. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+
+    // Never start speech recognition while AI is fetching audio or speaking
+    if (speechService.isSpeaking() || loadingRef.current) {
+      return;
+    }
+
+    voiceService.start({
+      onStart: () => {
+        setIsListening(true);
+      },
+      onResult: (transcript) => {
+        setInputText(transcript);
+        if (transcript && transcript.trim()) {
+          handleSendMessage(transcript);
+        }
+      },
+      onError: (errorMessage) => {
+        setIsListening(false);
+        if (errorMessage.includes('permission') || errorMessage.includes('microphone')) {
+          setError(errorMessage);
+        }
+      },
+      onEnd: () => {
+        setIsListening(false);
+        // Auto-restart recognition after silence timeout during active voice session
+        if (
+          conversationStartedRef.current &&
+          !loadingRef.current &&
+          !speechService.isSpeaking() &&
+          !isModalOpenRef.current
+        ) {
+          setTimeout(() => {
+            if (
+              conversationStartedRef.current &&
+              !loadingRef.current &&
+              !speechService.isSpeaking() &&
+              !isModalOpenRef.current
+            ) {
+              handleStartListening();
+            }
+          }, 750);
+        }
+      }
+    });
+  }, []);
+
+  /**
+   * Speak AI message using ElevenLabs SpeechService (Text-to-Speech).
+   * Automatically activates speech recognition ONLY AFTER TTS playback completes.
+   */
+  const speakAiMessage = useCallback(
+    (text) => {
+      handleStopListening();
+      setIsSpeaking(true);
+
+      speechService.speak(text, {
+        onStart: () => {
+          setIsSpeaking(true);
+        },
+        onEnd: () => {
+          setIsSpeaking(false);
+          // Auto-start speech recognition AFTER AI finishes speaking
+          setTimeout(() => {
+            if (
+              conversationStartedRef.current &&
+              !loadingRef.current &&
+              !isModalOpenRef.current
+            ) {
+              handleStartListening();
+            }
+          }, 300);
+        },
+        onError: () => {
+          setIsSpeaking(false);
+          setTimeout(() => {
+            if (
+              conversationStartedRef.current &&
+              !loadingRef.current &&
+              !isModalOpenRef.current
+            ) {
+              handleStartListening();
+            }
+          }, 300);
+        }
+      });
+    },
+    [handleStopListening, handleStartListening]
+  );
+
   /**
    * Send User Message:
    * 1. Appends user message
-   * 2. Calls POST /chat
+   * 2. Calls POST /chat with active sessionIdRef.current
    * 3. Appends AI response
-   * 4. Resets inputText
+   * 4. Speaks AI response via ElevenLabs Text-to-Speech
    */
   const handleSendMessage = useCallback(
     async (text) => {
       const messageToSend = text || inputText;
-      if (!messageToSend || !messageToSend.trim() || loading) return;
+      if (!messageToSend || !messageToSend.trim() || loadingRef.current) return;
 
       setError(null);
       handleStopListening();
+      handleStopSpeaking();
 
-      let activeSessionId = sessionId;
-      if (!activeSessionId) {
-        activeSessionId = generateUniqueSessionId();
-        setSessionId(activeSessionId);
-        setConversationStarted(true);
-      }
+      const activeSessionId = sessionIdRef.current;
+      if (!activeSessionId) return;
 
       const userMsgTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const userMessage = {
@@ -81,6 +207,9 @@ export function useChat() {
         };
 
         setMessages((prev) => [...prev, aiMessage]);
+
+        // Speak AI reply via ElevenLabs TTS
+        speakAiMessage(aiReply);
       } catch (err) {
         console.error('Chat API Error:', err);
         const errorMsg =
@@ -92,53 +221,30 @@ export function useChat() {
         setLoading(false);
       }
     },
-    [sessionId, inputText, loading, handleStopListening]
+    [inputText, handleStopListening, handleStopSpeaking, speakAiMessage]
   );
 
   /**
-   * Start Voice Listening (Web Speech API)
-   * Populates recognized speech into inputText and automatically dispatches to handleSendMessage.
-   */
-  const handleStartListening = useCallback(() => {
-    if (!voiceService.isSupported()) {
-      setError('Your browser does not support Speech Recognition. Please use Chrome, Edge, or Safari.');
-      return;
-    }
-
-    voiceService.start({
-      onStart: () => {
-        setIsListening(true);
-      },
-      onResult: (transcript) => {
-        setInputText(transcript);
-        if (transcript && transcript.trim()) {
-          handleSendMessage(transcript);
-        }
-      },
-      onError: (errorMessage) => {
-        setIsListening(false);
-        setError(errorMessage);
-      },
-      onEnd: () => {
-        setIsListening(false);
-      }
-    });
-  }, [handleSendMessage]);
-
-  /**
    * Start Voice Conversation:
-   * 1. Generate session_id
+   * 1. Generate new session_id (EXACTLY ONCE at session start)
    * 2. Fetch initial AI greeting from POST /chat
-   * 3. Hands-free loop will automatically start Speech Recognition once greeting arrives
+   * 3. Render initial greeting immediately
+   * 4. Synthesize initial AI greeting via ElevenLabs TTS
+   * 5. Open Speech Recognition ONLY AFTER initial greeting playback finishes
    */
   const handleStartConversation = useCallback(async () => {
+    if (conversationStartedRef.current || loadingRef.current) return;
+
     const newSessionId = generateUniqueSessionId();
+    sessionIdRef.current = newSessionId;
     setSessionId(newSessionId);
+    conversationStartedRef.current = true;
     setConversationStarted(true);
     setMessages([]);
     setIsTextMode(false);
     setError(null);
     setLoading(true);
+    handleStopSpeaking();
 
     try {
       const data = await sendMessageApi(newSessionId, 'Hi');
@@ -153,6 +259,9 @@ export function useChat() {
           timestamp: aiMsgTime
         }
       ]);
+
+      // Speak initial AI greeting via ElevenLabs TTS
+      speakAiMessage(firstGreeting);
     } catch (err) {
       console.error('Initial Greeting API Error:', err);
       const errorMsg =
@@ -163,26 +272,7 @@ export function useChat() {
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  // Hands-free turn loop:
-  // Automatically re-activates Speech Recognition after an AI response renders and completes
-  useEffect(() => {
-    if (
-      conversationStarted &&
-      !loading &&
-      !isModalOpen &&
-      !isListening &&
-      messages.length > 0 &&
-      messages[messages.length - 1].role === 'assistant'
-    ) {
-      const timer = setTimeout(() => {
-        handleStartListening();
-      }, 400);
-
-      return () => clearTimeout(timer);
-    }
-  }, [conversationStarted, loading, isModalOpen, isListening, messages, handleStartListening]);
+  }, [handleStopSpeaking, speakAiMessage]);
 
   const toggleTextMode = useCallback(() => {
     setIsTextMode((prev) => !prev);
@@ -190,8 +280,10 @@ export function useChat() {
 
   const handleEndConversation = useCallback(async () => {
     handleStopListening();
+    handleStopSpeaking();
 
-    if (!sessionId) {
+    const activeSessionId = sessionIdRef.current;
+    if (!activeSessionId) {
       setIsModalOpen(true);
       return;
     }
@@ -200,8 +292,9 @@ export function useChat() {
     setError(null);
 
     try {
-      const data = await endConversationApi(sessionId);
+      const data = await endConversationApi(activeSessionId);
       setSummaryData(data);
+      conversationStartedRef.current = false;
       setConversationStarted(false);
       setIsModalOpen(true);
     } catch (err) {
@@ -211,10 +304,13 @@ export function useChat() {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, handleStopListening]);
+  }, [handleStopListening, handleStopSpeaking]);
 
   const handleNewConversation = useCallback(() => {
     handleStopListening();
+    handleStopSpeaking();
+    sessionIdRef.current = null;
+    conversationStartedRef.current = false;
     setMessages([]);
     setSessionId(null);
     setConversationStarted(false);
@@ -223,7 +319,7 @@ export function useChat() {
     setSummaryData(null);
     setError(null);
     setIsModalOpen(false);
-  }, [handleStopListening]);
+  }, [handleStopListening, handleStopSpeaking]);
 
   const closeModal = useCallback(() => {
     setIsModalOpen(false);
@@ -233,10 +329,11 @@ export function useChat() {
     setError(null);
   }, []);
 
-  // Cleanup speech recognition on unmount
+  // Cleanup speech synthesis & recognition on unmount
   useEffect(() => {
     return () => {
       voiceService.stop();
+      speechService.stop();
     };
   }, []);
 
@@ -247,6 +344,7 @@ export function useChat() {
     conversationStarted,
     isTextMode,
     isListening,
+    isSpeaking,
     inputText,
     setInputText,
     summaryData,

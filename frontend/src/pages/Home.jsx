@@ -16,6 +16,7 @@ export default function Home() {
     conversationStarted,
     isTextMode,
     isListening,
+    isSpeaking,
     inputText,
     setInputText,
     summaryData,
@@ -58,6 +59,7 @@ export default function Home() {
           {/* Active Session Voice Indicator */}
           <VoiceIndicator
             isListening={isListening}
+            isSpeaking={isSpeaking}
             onToggleListen={handleToggleListen}
           />
 
@@ -74,7 +76,7 @@ export default function Home() {
                 onSendMessage={handleSendMessage}
                 onMicClick={handleToggleListen}
                 isListening={isListening}
-                disabled={loading}
+                disabled={loading || isSpeaking}
                 placeholder="Speak naturally or edit your recognized message..."
               />
             )}
