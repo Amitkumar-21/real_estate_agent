@@ -86,7 +86,7 @@ VITE_ELEVEN_LABS_VOICE_ID=your_elevenlabs_voice_id
 #### Backend (`backend/.env`)
 ```env
 GROQ_API_KEY=your_groq_api_key
-MODEL_NAME=llama-3.3-70b-versatile
+MODEL_NAME=openai/gpt-oss-120b
 ```
 
 ---
